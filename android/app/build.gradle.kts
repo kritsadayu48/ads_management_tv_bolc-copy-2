@@ -42,3 +42,16 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // ... dependencies อื่นๆ
+
+    // เพิ่ม Media3 ExoPlayer dependencies
+    implementation("androidx.media3:media3-exoplayer:1.7.1")
+    implementation("androidx.media3:media3-ui:1.7.1")
+    implementation("androidx.media3:media3-session:1.7.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.1")
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.media3:media3-database:1.3.1")
+
+}

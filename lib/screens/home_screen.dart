@@ -7,10 +7,11 @@ import 'package:ads_management_tv/models/advertisement.dart';
 import 'package:ads_management_tv/screens/qr_generator_screen.dart';
 import 'package:ads_management_tv/services/device_service.dart';
 import 'package:ads_management_tv/states/ad_states.dart';
+import 'package:ads_management_tv/widgets/exoplayer_widget.dart';
+import 'package:ads_management_tv/widgets/video_player_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:video_player/video_player.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class AdPlayerScreen extends StatefulWidget {
@@ -141,192 +142,34 @@ class _AdPlayerScreenState extends State<AdPlayerScreen>
       _currentAdId = newAdId;
       _isBuilding = true;
 
-      print(
-          '📺 Android TV - UI: Content transition for ${state.currentAd.type} - ${state.currentAd.title ?? newAdId}');
-
       Widget newContent;
-
       if (state.currentAd.type == 'video') {
-        if (state.isVideoReady && state.videoController != null) {
-          // Video is ready - show immediately
-          newContent = _buildVideoContentOptimized(
-              state.currentAd, state.videoController!);
-        } else {
-          // Video not ready - check if it's cached to determine loading type
-          final adBloc = context.read<AdBloc>();
-          final isDownloaded = adBloc.isVideoDownloaded(state.currentAd.id);
-
-          if (isDownloaded) {
-            // Cached video should not show loading - this shouldn't happen often
-            // But if it does, show minimal loading
-            newContent = _buildMinimalTransition(state.currentAd);
-          } else {
-            // Network video - show proper loading
-            newContent = _buildNetworkLoadingContent(state.currentAd);
-          }
-        }
+        newContent = VideoPlayerWidget(
+          key: ValueKey(state.currentAd.id),
+          videoUrl: state.currentAd.content,
+          orientation: state.currentAd.orientation,
+          isLooping: context.read<AdBloc>().advertisements.length ==
+              1, // ส่งค่า isLooping เข้าไป
+          onCompleted: () {
+            context.read<AdBloc>().add(VideoCompleted());
+          },
+          onError: (error) {
+            context
+                .read<AdBloc>()
+                .add(HandleError("Video player error: $error"));
+          },
+        );
       } else {
-        // Image content
+        // สำหรับ Image ก็ควรใส่ Key ด้วยเพื่อความสอดคล้องกัน
         newContent = _buildImageContentOptimized(state.currentAd);
+        // newContent = KeyedSubtree(
+        //   key: ValueKey(state.currentAd.id),
+        //   child: _buildImageContentOptimized(state.currentAd),
+        // );
       }
 
       _transitionToNewContent(newContent);
-    } else if (state.currentAd.type == 'video' &&
-        _currentAdId == newAdId &&
-        state.isVideoReady &&
-        state.videoController != null &&
-        !_isBuilding) {
-      // Video became ready (for network videos)
-      print('📺 Android TV - UI: Video ready, transitioning');
-      _isBuilding = true;
-
-      Widget videoContent =
-          _buildVideoContentOptimized(state.currentAd, state.videoController!);
-      _transitionToNewContent(videoContent);
     }
-  }
-
-  // Minimal transition for cached videos (rarely shown)
-  Widget _buildMinimalTransition(Advertisement ad) {
-    return Container(
-      color: Colors.black,
-      child: Center(
-        child: SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.5,
-            valueColor:
-                AlwaysStoppedAnimation<Color>(Colors.white.withOpacity(0.3)),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Network loading for non-cached videos only
-  Widget _buildNetworkLoadingContent(Advertisement ad) {
-    return Container(
-      color: Colors.black,
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Download icon
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: const Icon(
-                Icons.cloud_download,
-                size: 40,
-                color: Colors.white,
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Loading spinner
-            const SizedBox(
-              width: 30,
-              height: 30,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
-            // Loading text
-            const Text(
-              'กำลังโหลดวิดีโอ...',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            // Video title
-            if (ad.title != null && ad.title!.isNotEmpty)
-              Text(
-                ad.title!,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.7),
-                  fontSize: 14,
-                ),
-                textAlign: TextAlign.center,
-              ),
-
-            const SizedBox(height: 15),
-
-            // Info
-            Text(
-              'วิดีโอจะถูกบันทึกไว้เพื่อเล่นครั้งต่อไป',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.5),
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  } // Fast loading for cached videos
-
-  Widget _buildFastLoadingContent(Advertisement ad) {
-    return Container(
-      color: Colors.black,
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Simple play icon
-            Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.play_arrow,
-                size: 30,
-                color: Colors.white,
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
-            // Minimal spinner
-            const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            // Simple text
-            const Text(
-              'เริ่มเล่น...',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildStateContent(BuildContext context, AdState state) {
@@ -353,41 +196,6 @@ class _AdPlayerScreenState extends State<AdPlayerScreen>
     );
   }
 
-  // Minimal wait state for videos (should rarely be seen)
-  Widget _buildMinimalVideoWait(Advertisement ad) {
-    return Container(
-      color: Colors.black,
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Minimal loading indicator
-            const SizedBox(
-              width: 30,
-              height: 30,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white54),
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
-            // Simple text
-            const Text(
-              'กำลังเตรียม...',
-              style: TextStyle(
-                color: Colors.white54,
-                fontSize: 16,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Startup preloading view (only shown at app start)
   Widget _buildStartupPreloadingView(AdPreloading state) {
     return Container(
       decoration: BoxDecoration(
@@ -543,8 +351,6 @@ class _AdPlayerScreenState extends State<AdPlayerScreen>
   // Debug info overlay (optional, can be removed in production)
   Widget _buildDebugInfo(AdPlaying state) {
     final adBloc = context.read<AdBloc>();
-    final isDownloaded = adBloc.isVideoDownloaded(state.currentAd.id);
-    final downloadCount = adBloc.downloadedVideoCount;
     final totalVideos = adBloc.totalVideoCount;
 
     return Positioned(
@@ -576,131 +382,9 @@ class _AdPlayerScreenState extends State<AdPlayerScreen>
                   fontSize: 10,
                 ),
               ),
-              Text(
-                'Cached: $isDownloaded',
-                style: TextStyle(
-                  color: isDownloaded ? Colors.green : Colors.red,
-                  fontSize: 10,
-                ),
-              ),
             ],
-            Text(
-              'Downloads: $downloadCount/$totalVideos',
-              style: const TextStyle(color: Colors.white, fontSize: 10),
-            ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildCachedVideoLoadingContent(Advertisement ad) {
-    return Container(
-      color: Colors.black,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Background gradient (สีเข้มกว่าปกติ)
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.green[900]!.withOpacity(0.3), // เขียวแทนน้ำเงิน
-                  Colors.black,
-                  Colors.black,
-                ],
-              ),
-            ),
-          ),
-
-          // Loading content - แบบ minimal สำหรับ cached
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Video icon ขนาดเล็กลง
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(
-                      color: Colors.green.withOpacity(0.3),
-                      width: 2,
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.play_circle,
-                    size: 40,
-                    color: Colors.white,
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Loading spinner ขนาดเล็กลง
-                const SizedBox(
-                  width: 30,
-                  height: 30,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
-                  ),
-                ),
-
-                const SizedBox(height: 15),
-
-                // ข้อความที่บ่งบอกว่าเป็น cached
-                const Text(
-                  'เริ่มเล่นวิดีโอ...',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w300,
-                  ),
-                ),
-
-                const SizedBox(height: 8),
-
-                // Video title if available
-                if (ad.title != null && ad.title!.isNotEmpty)
-                  Text(
-                    ad.title!,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
-                      fontSize: 16,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-
-                const SizedBox(height: 15),
-
-                // Cached indicator
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.check_circle,
-                      color: Colors.green.withOpacity(0.7),
-                      size: 16,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      'พร้อมเล่น',
-                      style: TextStyle(
-                        color: Colors.green.withOpacity(0.7),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -860,217 +544,6 @@ class _AdPlayerScreenState extends State<AdPlayerScreen>
     );
   }
 
-  Widget _buildVideoContentOptimized(
-      Advertisement ad, VideoPlayerController controller) {
-    print('📺 TV - UI: ⚡ Building optimized BLoC video content');
-
-    if (!controller.value.isInitialized) {
-      return _buildVideoLoadingContent(ad);
-    }
-
-    final aspectRatio = controller.value.aspectRatio;
-
-    return RepaintBoundary(
-      child: Container(
-        color: Colors.black,
-        width: double.infinity,
-        height: double.infinity,
-        child: aspectRatio < 1.0
-            ? _buildPortraitVideoLayout(controller, aspectRatio)
-            : _buildLandscapeVideoLayout(controller),
-      ),
-    );
-  }
-
-  Widget _buildPortraitVideoLayout(
-      VideoPlayerController controller, double aspectRatio) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Background blur
-        Positioned.fill(
-          child: ClipRect(
-            child: Transform.scale(
-              scale: 2.0,
-              child: FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: controller.value.size.width,
-                  height: controller.value.size.height,
-                  child: Stack(
-                    children: [
-                      VideoPlayer(controller),
-                      Positioned.fill(
-                        child: BackdropFilter(
-                          filter: ui.ImageFilter.blur(sigmaX: 40, sigmaY: 40),
-                          child: Container(
-                            color: Colors.black.withOpacity(0.3),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        // Centered video
-        Center(
-          child: Container(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 1.0,
-              maxWidth: MediaQuery.of(context).size.width * 0.8,
-            ),
-            child: AspectRatio(
-              aspectRatio: aspectRatio,
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.5),
-                      blurRadius: 20,
-                      spreadRadius: 5,
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: VideoPlayer(controller),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLandscapeVideoLayout(VideoPlayerController controller) {
-    return FittedBox(
-      fit: BoxFit.cover,
-      child: SizedBox(
-        width: controller.value.size.width,
-        height: controller.value.size.height,
-        child: VideoPlayer(controller),
-      ),
-    );
-  }
-
-// Loading state ปกติสำหรับ network video
-  Widget _buildVideoLoadingContent(Advertisement ad) {
-    return Container(
-      color: Colors.black,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Background gradient
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.blue[900]!.withOpacity(0.3),
-                  Colors.black,
-                  Colors.black,
-                ],
-              ),
-            ),
-          ),
-
-          // Loading content
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Video icon
-                Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.3),
-                      width: 2,
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.cloud_download,
-                    size: 60,
-                    color: Colors.white,
-                  ),
-                ),
-
-                const SizedBox(height: 30),
-
-                // Loading spinner
-                const SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Loading text สำหรับ network
-                const Text(
-                  'กำลังโหลดวิดีโอ...',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w300,
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                // Video title if available
-                if (ad.title != null && ad.title!.isNotEmpty)
-                  Text(
-                    ad.title!,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
-                      fontSize: 18,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-
-                const SizedBox(height: 20),
-
-                // Network indicator
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.wifi,
-                      color: Colors.blue.withOpacity(0.7),
-                      size: 16,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      'กำลังดาวน์โหลดเพื่อเล่นครั้งต่อไป',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.5),
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildInitialLoadingView() {
     return Container(
       decoration: BoxDecoration(
@@ -1140,97 +613,6 @@ class _AdPlayerScreenState extends State<AdPlayerScreen>
                 color: Colors.white.withOpacity(0.7),
                 fontSize: 16,
                 fontFamily: 'monospace',
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPreloadingView(AdPreloading state) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.indigo[900]!,
-            Colors.black87,
-            Colors.black,
-          ],
-        ),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(50),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.3),
-                  width: 2,
-                ),
-              ),
-              child: const Icon(
-                Icons.download,
-                size: 50,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 40),
-            Container(
-              width: 300,
-              height: 6,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor: state.progress,
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.blue[400]!, Colors.purple[400]!],
-                    ),
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              '${(state.progress * 100).toInt()}%',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 30),
-            const Text(
-              'เตรียมความพร้อมรายการโฆษณา',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.w300,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Text(
-                state.status,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.8),
-                  fontSize: 16,
-                ),
-                textAlign: TextAlign.center,
               ),
             ),
           ],
