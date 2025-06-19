@@ -24,11 +24,12 @@ class VideoPlayerWidget extends StatefulWidget {
 }
 
 class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
-  static const MethodChannel _channel = MethodChannel('com.softacular.signboard.tv/video_player');
+  static const MethodChannel _channel =
+      MethodChannel('com.softacular.signboard.tv/video_player');
 
   int? _textureId;
   StreamSubscription? _eventSubscription;
-  
+
   // State สำหรับเก็บขนาดวิดีโอ
   double _videoWidth = 0;
   double _videoHeight = 0;
@@ -42,12 +43,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   @override
   void didUpdateWidget(VideoPlayerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.videoUrl != oldWidget.videoUrl && _textureId != null) {
-      // เมื่อ URL เปลี่ยน ให้รีเซ็ตขนาดและสั่ง initialize ใหม่
-      setState(() {
-        _videoWidth = 0;
-        _videoHeight = 0;
-      });
+    if (widget.videoUrl != oldWidget.videoUrl) {
+      // *** ลบ หรือ คอมเมนต์ setState ส่วนนี้ทิ้งไปครับ ***
+      // setState(() {
+      //   _videoWidth = 0;
+      //   _videoHeight = 0;
+      // });
+      // *****************************************
+
+      // ให้เหลือแค่การเรียก _initializePlayer() เท่านั้น
       _initializePlayer();
     }
   }
@@ -56,7 +60,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     try {
       final textureId = await _channel.invokeMethod<int>('create');
       if (textureId == null || !mounted) return;
-      
+
       setState(() {
         _textureId = textureId;
       });
@@ -71,23 +75,24 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   void _setupEventListeners() {
     if (_textureId == null) return;
     _eventSubscription?.cancel(); // ยกเลิกของเก่าก่อน
-    _eventSubscription = EventChannel('com.softacular.signboard.tv/video_events_$_textureId')
-        .receiveBroadcastStream()
-        .listen((event) {
-          if (event is Map) {
-            final eventType = event['event'];
-            if (eventType == 'sized') {
-              // เมื่อได้รับขนาดวิดีโอจาก Native
-              if (mounted) {
-                setState(() {
-                  _videoWidth = event['width'] ?? 0;
-                  _videoHeight = event['height'] ?? 0;
-                });
-              }
-            } else if (eventType == 'completed') {
-              widget.onCompleted?.call();
-            }
+    _eventSubscription =
+        EventChannel('com.softacular.signboard.tv/video_events_$_textureId')
+            .receiveBroadcastStream()
+            .listen((event) {
+      if (event is Map) {
+        final eventType = event['event'];
+        if (eventType == 'sized') {
+          // เมื่อได้รับขนาดวิดีโอจาก Native
+          if (mounted) {
+            setState(() {
+              _videoWidth = event['width'] ?? 0;
+              _videoHeight = event['height'] ?? 0;
+            });
           }
+        } else if (eventType == 'completed') {
+          widget.onCompleted?.call();
+        }
+      }
     }, onError: (error) {
       widget.onError?.call(error);
     });
@@ -105,13 +110,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       widget.onError?.call(e);
     }
   }
+
   @override
   Widget build(BuildContext context) {
     // ถ้ายังไม่ได้ textureId หรือยังไม่รู้ขนาดวิดีโอ ให้แสดงหน้าจอโหลดดิ้ง
     if (_textureId == null || _videoWidth == 0 || _videoHeight == 0) {
       return Container(
         color: Colors.black,
-        child: const Center(child: CircularProgressIndicator(color: Colors.white24)),
+        child: const Center(
+            child: CircularProgressIndicator(color: Colors.white24)),
       );
     }
 
@@ -130,7 +137,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
               scale: 1.0,
               child: Texture(textureId: _textureId!),
             ),
-          
+
           // Blur Effect Layer (แสดงเฉพาะวิดีโอแนวตั้ง)
           if (isPortrait)
             BackdropFilter(

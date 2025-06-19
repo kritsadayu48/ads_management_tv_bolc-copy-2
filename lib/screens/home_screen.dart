@@ -7,7 +7,6 @@ import 'package:ads_management_tv/models/advertisement.dart';
 import 'package:ads_management_tv/screens/qr_generator_screen.dart';
 import 'package:ads_management_tv/services/device_service.dart';
 import 'package:ads_management_tv/states/ad_states.dart';
-import 'package:ads_management_tv/widgets/exoplayer_widget.dart';
 import 'package:ads_management_tv/widgets/video_player_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -145,11 +144,12 @@ class _AdPlayerScreenState extends State<AdPlayerScreen>
       Widget newContent;
       if (state.currentAd.type == 'video') {
         newContent = VideoPlayerWidget(
-          key: ValueKey(state.currentAd.id),
+          // *** ลบบรรทัด key: ValueKey(...) นี้ทิ้งไปครับ ***
+          // key: ValueKey(state.currentAd.id),
+
           videoUrl: state.currentAd.content,
           orientation: state.currentAd.orientation,
-          isLooping: context.read<AdBloc>().advertisements.length ==
-              1, // ส่งค่า isLooping เข้าไป
+          isLooping: context.read<AdBloc>().advertisements.length == 1,
           onCompleted: () {
             context.read<AdBloc>().add(VideoCompleted());
           },
@@ -160,12 +160,11 @@ class _AdPlayerScreenState extends State<AdPlayerScreen>
           },
         );
       } else {
-        // สำหรับ Image ก็ควรใส่ Key ด้วยเพื่อความสอดคล้องกัน
-        newContent = _buildImageContentOptimized(state.currentAd);
-        // newContent = KeyedSubtree(
-        //   key: ValueKey(state.currentAd.id),
-        //   child: _buildImageContentOptimized(state.currentAd),
-        // );
+        // ในส่วนของ Image การใส่ Key ไว้ยังคงเหมาะสม
+        newContent = KeyedSubtree(
+          key: ValueKey(state.currentAd.id),
+          child: _buildImageContentOptimized(state.currentAd),
+        );
       }
 
       _transitionToNewContent(newContent);

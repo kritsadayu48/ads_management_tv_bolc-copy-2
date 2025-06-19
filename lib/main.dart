@@ -2,9 +2,11 @@
 import 'dart:io';
 import 'package:ads_management_tv/screens/home_screen.dart';
 import 'package:ads_management_tv/widgets/bloc_provider_wrapper.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:logging/logging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // Import your files
@@ -14,12 +16,15 @@ import 'services/ad_service.dart';
 import 'services/device_service.dart';
 import 'screens/qr_generator_screen.dart';
 
+final log = Logger('');
+
 // Custom HTTP override to bypass SSL checks
 class MyHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
     return super.createHttpClient(context)
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+      ..badCertificateCallback =
+          (X509Certificate cert, String host, int port) => true;
   }
 }
 
@@ -34,13 +39,15 @@ class SimpleBlocObserver extends BlocObserver {
   @override
   void onTransition(Bloc bloc, Transition transition) {
     super.onTransition(bloc, transition);
-    print('📺 BLoC Transition: ${bloc.runtimeType} - ${transition.currentState.runtimeType} -> ${transition.nextState.runtimeType}');
+    print(
+        '📺 BLoC Transition: ${bloc.runtimeType} - ${transition.currentState.runtimeType} -> ${transition.nextState.runtimeType}');
   }
 
   @override
   void onChange(BlocBase bloc, Change change) {
     super.onChange(bloc, change);
-    print('📺 BLoC Change: ${bloc.runtimeType} - ${change.currentState.runtimeType} -> ${change.nextState.runtimeType}');
+    print(
+        '📺 BLoC Change: ${bloc.runtimeType} - ${change.currentState.runtimeType} -> ${change.nextState.runtimeType}');
   }
 
   @override
@@ -48,33 +55,63 @@ class SimpleBlocObserver extends BlocObserver {
     super.onError(bloc, error, stackTrace);
     print('📺 BLoC Error: ${bloc.runtimeType} - $error');
     // Only print stack trace in debug mode
-    if (error.toString().contains('Critical') || error.toString().contains('Fatal')) {
+    if (error.toString().contains('Critical') ||
+        error.toString().contains('Fatal')) {
       print('📺 BLoC StackTrace: $stackTrace');
     }
   }
 }
 
 void main() async {
+  // --- ส่วนของการตั้งค่า Logger ---
+  // 1. กำหนดระดับของ Log ที่จะให้แสดงผล
+  // Level.ALL คือแสดงทุกระดับ
+  // ในเวอร์ชัน Production อาจจะปรับเป็น Level.INFO หรือ WARNING
+  if (kReleaseMode) {
+    // สำหรับ Production, อาจจะแสดงเฉพาะ Warning หรือ Severe
+    Logger.root.level = Level.WARNING;
+  } else {
+    // สำหรับ Debug, แสดงทั้งหมด
+    Logger.root.level = Level.ALL;
+  }
+
+  // 2. ตั้งค่า Listener เพื่อรอรับ Log Record และนำไปแสดงผล
+  // หากไม่มีส่วนนี้ Log จะถูกสร้างขึ้นแต่จะไม่ถูกแสดงที่ไหนเลย
+  Logger.root.onRecord.listen((record) {
+    // เราสามารถจัดรูปแบบการแสดงผลได้ตามต้องการ
+    print(
+        '${record.level.name}: ${record.time}: ${record.loggerName}: ${record.message}');
+
+    // หากมี error หรือ stacktrace ก็สามารถแสดงผลได้
+    if (record.error != null) {
+      print('Error: ${record.error}');
+    }
+    if (record.stackTrace != null) {
+      print('StackTrace: ${record.stackTrace}');
+    }
+  });
+  // --- จบส่วนของการตั้งค่า Logger ---
+
   // ต้องเรียกก่อนใช้ Flutter widgets
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // ตั้งค่า HTTP overrides เพื่อให้สามารถเชื่อมต่อกับ server ที่มี SSL certificate ที่ไม่ถูกต้องได้
   HttpOverrides.global = MyHttpOverrides();
-  
+
   // Set up BLoC observer
   Bloc.observer = SimpleBlocObserver();
-  
+
   // ตรวจสอบว่ามีการจับคู่อุปกรณ์แล้วหรือไม่
   final deviceService = DeviceService();
   final hasCredentials = await deviceService.hasStoredCredentials();
-  
+
   // รันแอปด้วยหน้าจอเริ่มต้นที่เหมาะสม
   runApp(MyApp(isDevicePaired: hasCredentials));
 }
 
 class MyApp extends StatelessWidget {
   final bool isDevicePaired;
-  
+
   const MyApp({Key? key, required this.isDevicePaired}) : super(key: key);
 
   @override
@@ -86,35 +123,37 @@ class MyApp extends StatelessWidget {
         brightness: Brightness.dark,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: isDevicePaired 
-        ? FutureBuilder<Map<String, dynamic>?>(
-            future: DeviceService().getDeviceCredentials(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              } else if (snapshot.hasData && snapshot.data != null) {
-                final deviceId = snapshot.data!['device_id'] ?? '';
-                print('📺 TV - Main: Loading AdPlayerScreen with device ID: $deviceId');
-                
-                return MultiBlocProvider(
-                  providers: [
-                    BlocProvider<AdBloc>(
-                      create: (context) => AdBloc(
-                        deviceId: deviceId,
-                        adService: AdService(),
-                        deviceService: DeviceService(),
+      home: isDevicePaired
+          ? FutureBuilder<Map<String, dynamic>?>(
+              future: DeviceService().getDeviceCredentials(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                } else if (snapshot.hasData && snapshot.data != null) {
+                  final deviceId = snapshot.data!['device_id'] ?? '';
+                  print(
+                      '📺 TV - Main: Loading AdPlayerScreen with device ID: $deviceId');
+
+                  return MultiBlocProvider(
+                    providers: [
+                      BlocProvider<AdBloc>(
+                        create: (context) => AdBloc(
+                          deviceId: deviceId,
+                          adService: AdService(),
+                          deviceService: DeviceService(),
+                        ),
                       ),
-                    ),
-                  ],
-                  child: AdPlayerScreen(deviceId: deviceId),
-                );
-              } else {
-                print('📺 TV - Main: No device credentials found, showing QR screen');
-                return const QrGeneratorScreen();
-              }
-            },
-          )
-        : const QrGeneratorScreen(),
+                    ],
+                    child: AdPlayerScreen(deviceId: deviceId),
+                  );
+                } else {
+                  print(
+                      '📺 TV - Main: No device credentials found, showing QR screen');
+                  return const QrGeneratorScreen();
+                }
+              },
+            )
+          : const QrGeneratorScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
@@ -142,12 +181,12 @@ class _DeviceCheckScreenState extends State<DeviceCheckScreen> {
     try {
       // เปลี่ยนจาก getDeviceId() เป็น method ที่ถูกต้อง
       final hasCredentials = await _deviceService.hasStoredCredentials();
-      
+
       if (hasCredentials) {
         // ดึง device ID จาก credentials
         final credentials = await _deviceService.getDeviceCredentials();
         final deviceId = credentials?['device_id'] ?? '';
-        
+
         if (deviceId.isNotEmpty) {
           // Device is registered, navigate to ad player with BLoC
           if (mounted) {
@@ -258,11 +297,11 @@ extension AdBlocX on AdBloc {
   void handleVideoError(String url) {
     add(HandleError('Video initialization failed for: $url'));
   }
-  
+
   void skipAd() {
     add(SkipToNext());
   }
-  
+
   void refreshAds() {
     add(FetchAdvertisements());
   }

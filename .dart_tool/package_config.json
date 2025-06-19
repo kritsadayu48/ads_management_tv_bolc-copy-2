@@ -194,6 +194,12 @@
       "languageVersion": "3.8"
     },
     {
+      "name": "logging",
+      "rootUri": "file:///Users/spnsoftware/.pub-cache/hosted/pub.dev/logging-1.3.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.4"
+    },
+    {
       "name": "matcher",
       "rootUri": "file:///Users/spnsoftware/.pub-cache/hosted/pub.dev/matcher-0.12.17",
       "packageUri": "lib/",

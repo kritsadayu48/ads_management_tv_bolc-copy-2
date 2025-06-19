@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/advertisement.dart';
 import '../services/ad_service.dart';
@@ -13,6 +14,8 @@ class AdBloc extends Bloc<AdEvent, AdState> {
   final String deviceId;
   final AdService _adService;
   final DeviceService _deviceService;
+
+  final log = Logger('');
 
   // Core data
   List<Advertisement> _advertisements = [];
@@ -40,6 +43,7 @@ class AdBloc extends Bloc<AdEvent, AdState> {
   }
 
   Future<void> _onHandleError(HandleError event, Emitter<AdState> emit) async {
+    
     print('📺 Android TV - BLoC: Handling error: ${event.error}');
     emit(AdError(message: event.error));
 

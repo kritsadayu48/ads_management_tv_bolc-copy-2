@@ -7,7 +7,7 @@ import android.view.Surface
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.common.VideoSize // เพิ่ม import
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -30,7 +30,11 @@ class VideoPlayerHandler(
     private val messenger: BinaryMessenger
 ) : MethodChannel.MethodCallHandler {
 
-    private val players = mutableMapOf<Long, PlayerData>()
+    // แก้ไขที่ 1: สร้าง ExoPlayer แค่ตัวเดียว และเก็บไว้ใช้ตลอด
+    private val exoPlayer: ExoPlayer
+    private val textureEntries = mutableMapOf<Long, TextureRegistry.SurfaceTextureEntry>()
+    private var eventChannel: EventChannel? = null
+    private var eventSink: EventChannel.EventSink? = null
 
     companion object {
         private var simpleCache: SimpleCache? = null
@@ -44,6 +48,17 @@ class VideoPlayerHandler(
             val databaseProvider = StandaloneDatabaseProvider(context)
             simpleCache = SimpleCache(cacheDir, LeastRecentlyUsedCacheEvictor(CACHE_SIZE_BYTES), databaseProvider)
         }
+
+        val cacheDataSourceFactory = CacheDataSource.Factory()
+            .setCache(simpleCache!!)
+            .setUpstreamDataSourceFactory(DefaultHttpDataSource.Factory())
+        val mediaSourceFactory = DefaultMediaSourceFactory(cacheDataSourceFactory)
+
+        exoPlayer = ExoPlayer.Builder(context)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .build()
+
+        setupEventListener()
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -51,46 +66,47 @@ class VideoPlayerHandler(
 
         when (call.method) {
             "create" -> {
+                // ไม่สร้าง Player ใหม่ แต่สร้างแค่ Texture
                 val textureEntry = textureRegistry.createSurfaceTexture()
                 val newTextureId = textureEntry.id()
-                val eventChannel = EventChannel(messenger, "com.softacular.signboard.tv/video_events_$newTextureId")
+                textureEntries[newTextureId] = textureEntry
 
-                val player = createPlayer()
-                player.setVideoSurface(Surface(textureEntry.surfaceTexture()))
+                // สร้าง EventChannel สำหรับ Texture ID ใหม่นี้
+                eventChannel = EventChannel(messenger, "com.softacular.signboard.tv/video_events_$newTextureId")
+                setupEventChannelListener()
 
-                val playerData = PlayerData(player, textureEntry, eventChannel)
-                players[newTextureId] = playerData
-
-                setupEventListener(player, playerData)
-
-                Log.d(TAG, "Created new player for textureId: $newTextureId")
+                Log.d(TAG, "Created new texture entry with textureId: $newTextureId")
                 result.success(newTextureId)
             }
             "initialize" -> {
                 val url = call.argument<String>("url")
-                val isLooping = call.argument<Boolean>("isLooping") ?: false // อ่านค่า isLooping
-                val playerData = players[textureId]
+                val isLooping = call.argument<Boolean>("isLooping") ?: false
 
-                if (playerData != null && url != null) {
+                if (textureId != null && url != null) {
+                    // ใช้ Player ตัวเดิมที่มีอยู่
+                    exoPlayer.stop() // หยุดของเก่าก่อน
+                    exoPlayer.setVideoSurface(Surface(textureEntries[textureId]?.surfaceTexture()))
+
                     val mediaItem = MediaItem.fromUri(Uri.parse(url))
-                    playerData.player.setMediaItem(mediaItem)
-
-                    // *** ตั้งค่าการเล่นวนซ้ำที่นี่ ***
-                    playerData.player.repeatMode = if (isLooping) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
-
-                    playerData.player.prepare()
-                    playerData.player.playWhenReady = true
-                    Log.d(TAG, "Initializing textureId $textureId with isLooping: $isLooping")
+                    exoPlayer.setMediaItem(mediaItem)
+                    exoPlayer.repeatMode = if (isLooping) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+                    exoPlayer.prepare()
+                    exoPlayer.playWhenReady = true
+                    Log.d(TAG, "Initializing textureId $textureId with URL: $url")
                     result.success(null)
                 } else {
-                    result.error("INIT_FAILED", "Player not found or URL is null", null)
+                    result.error("INIT_FAILED", "textureId or URL is null", null)
                 }
             }
             "dispose" -> {
                 if (textureId != null) {
-                    players[textureId]?.release()
-                    players.remove(textureId)
-                    Log.d(TAG, "Disposed player for textureId: $textureId")
+                    textureEntries[textureId]?.release()
+                    textureEntries.remove(textureId)
+                    // ถ้าไม่มี texture ไหนใช้อยู่แล้ว ให้หยุด player
+                    if (textureEntries.isEmpty()) {
+                        exoPlayer.stop()
+                    }
+                    Log.d(TAG, "Disposed textureId: $textureId")
                 }
                 result.success(null)
             }
@@ -98,38 +114,27 @@ class VideoPlayerHandler(
         }
     }
 
-    private fun createPlayer(): ExoPlayer {
-        val cacheDataSourceFactory = CacheDataSource.Factory()
-            .setCache(simpleCache!!)
-            .setUpstreamDataSourceFactory(DefaultHttpDataSource.Factory())
-        val mediaSourceFactory = DefaultMediaSourceFactory(cacheDataSourceFactory)
-
-        return ExoPlayer.Builder(context)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .build()
-    }
-
-    private fun setupEventListener(player: ExoPlayer, playerData: PlayerData) {
-        playerData.eventChannel.setStreamHandler(object : EventChannel.StreamHandler {
+    private fun setupEventChannelListener() {
+        eventChannel?.setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-                playerData.eventSink = events
+                eventSink = events
             }
             override fun onCancel(arguments: Any?) {
-                playerData.eventSink = null
+                eventSink = null
             }
         })
+    }
 
-        player.addListener(object : Player.Listener {
+    private fun setupEventListener() {
+        exoPlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) {
-                    playerData.eventSink?.success(mapOf("event" to "completed"))
+                    eventSink?.success(mapOf("event" to "completed"))
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
-                playerData.eventSink?.error("PLAYER_ERROR", error.message, null)
+                eventSink?.error("PLAYER_ERROR", error.message, null)
             }
-
-            // *** แก้ไขที่นี่: เพิ่มการส่งข้อมูลขนาดวิดีโอ ***
             override fun onVideoSizeChanged(videoSize: VideoSize) {
                 if (videoSize.width > 0 && videoSize.height > 0) {
                     val sizeMap = mapOf(
@@ -137,30 +142,16 @@ class VideoPlayerHandler(
                         "width" to videoSize.width.toDouble(),
                         "height" to videoSize.height.toDouble()
                     )
-                    playerData.eventSink?.success(sizeMap)
+                    eventSink?.success(sizeMap)
                 }
             }
         })
     }
 
     fun disposeAll() {
-        for (playerData in players.values) {
-            playerData.release()
-        }
-        players.clear()
-    }
-
-    private class PlayerData(
-        val player: ExoPlayer,
-        private val textureEntry: TextureRegistry.SurfaceTextureEntry,
-        val eventChannel: EventChannel
-    ) {
-        var eventSink: EventChannel.EventSink? = null
-
-        fun release() {
-            eventChannel.setStreamHandler(null)
-            player.release()
-            textureEntry.release()
-        }
+        textureEntries.values.forEach { it.release() }
+        textureEntries.clear()
+        exoPlayer.release()
+        Log.d(TAG, "Disposed all players and textures.")
     }
 }
