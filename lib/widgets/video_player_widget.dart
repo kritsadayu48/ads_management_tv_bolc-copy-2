@@ -127,7 +127,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           // Background (แสดงเฉพาะวิดีโอแนวตั้ง)
           if (isPortrait)
             Transform.scale(
-              scale: 2.5,
+              scale: 1.0,
               child: Texture(textureId: _textureId!),
             ),
           
