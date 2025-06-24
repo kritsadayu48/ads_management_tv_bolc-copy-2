@@ -42,196 +42,72 @@ class AdService {
   }
   
   // Fetch current schedules from API or cache
-  Future<List<Map<String, dynamic>>> getCurrentSchedules() async {
-    // ล้างแคชทุกครั้งก่อนเรียกข้อมูลใหม่เพื่อป้องกันการใช้ข้อมูลเก่า
-    // ข้อมูลจะถูกแคชใหม่เมื่อเรียก API สำเร็จ
-    await clearCache();
-    
-    // Check if we should use cached data to avoid spamming a failing API
-    if (_shouldUseCache()) {
-      final cachedData = await _getFromCache();
-      if (cachedData.isNotEmpty) {
-        print('📺 TV - AdService: Using cached schedules');
-        return cachedData;
-      }
-    }
-    
+   Future<List<Map<String, dynamic>>> getCurrentSchedules() async {
+    // 1. พยายามดึงข้อมูลใหม่จาก API ก่อนเสมอ
     try {
-      // ดึงข้อมูล device credentials
       final credentials = await _deviceService.getDeviceCredentials();
       final Map<String, String> headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       };
-      
-      // ถ้ามี access token ให้ใส่ในส่วนหัวการเรียก API
+
       if (credentials != null && credentials.containsKey('access_token')) {
         headers['Authorization'] = 'Bearer ${credentials['access_token']}';
-        print('📺 TV - AdService: Using authorization token for API request');
-      } else {
-        print('📺 TV - AdService: No authorization token available');
       }
       
-      // ใช้ URL พื้นฐานสำหรับการดึงตารางเวลา (ไม่ต้องแนบ device ID ในพาธ)
       String apiUrl = '$baseUrl/device/schedules';
-      
-      // แสดงข้อมูล device ID ที่ใช้ (ถ้ามี) แต่ใช้ token แทนในการส่งข้อมูล
       if (credentials != null && credentials.containsKey('device_id')) {
-        // เพิ่ม device_id เป็น query parameter
         apiUrl = '$apiUrl?device_id=${credentials['device_id']}';
-        print('📺 TV - AdService: Requesting schedules for device ID: ${credentials['device_id']}');
       }
-      
-      // Try to fetch fresh data from API
+
       final response = await http.get(
         Uri.parse(apiUrl),
         headers: headers,
-      ).timeout(const Duration(seconds: 10));
-      
+      ).timeout(const Duration(seconds: 15));
+
+      // 2. ถ้าดึงข้อมูลสำเร็จ
       if (response.statusCode == 200) {
-        // Reset error count on success
+        print('📺 TV - AdService: Successfully fetched new schedules from API.');
         _consecutiveErrors = 0;
         _lastFetchTime = DateTime.now();
-        
-        // Parse response data
+
         final data = jsonDecode(response.body);
-        print('📺 TV - AdService: Response data: $data');
-        
-        // ตรวจสอบรูปแบบข้อมูลทั้งแบบเก่า (schedules) และแบบใหม่ (message)
-        List<dynamic> schedulesJson = [];
-        
-        if (data.containsKey('schedules')) {
-          // รูปแบบเก่า
-          schedulesJson = data['schedules'] ?? [];
-          print('📺 TV - AdService: ใช้รูปแบบข้อมูลแบบเก่า (schedules)');
-        } else if (data.containsKey('message') && data['message'] is List) {
-          // รูปแบบใหม่
-          schedulesJson = data['message'] ?? [];
-          print('📺 TV - AdService: ใช้รูปแบบข้อมูลแบบใหม่ (message)');
-        } else {
-          print('📺 TV - AdService: ไม่พบข้อมูลโฆษณาในรูปแบบที่รองรับ');
-        }
-        
-        // แสดงข้อมูลโฆษณาที่ได้รับ
-        print('📺 TV - AdService: Schedules JSON: $schedulesJson');
+        List<dynamic> schedulesJson = data['schedules'] ?? data['message'] ?? [];
         
         final List<Map<String, dynamic>> schedules = schedulesJson
             .cast<Map<String, dynamic>>()
             .where((schedule) => _isScheduleValid(schedule))
             .toList();
         
-        // แสดงข้อมูลโฆษณาที่ผ่านการตรวจสอบความถูกต้อง
-        print('📺 TV - AdService: Valid schedules: $schedules');
-        
-        // Cache this data
+        // ล้างแคชเก่า แล้วบันทึกของใหม่
         await _saveToCache(schedules);
         
         return schedules;
+
       } else if (response.statusCode == 401) {
-        // กรณี Token หมดอายุ (401 Unauthorized)
-        final responseBody = response.body;
-        
-        print('📺 TV - AdService: API error 401: $responseBody');
-        
-        // ตรวจสอบว่าเป็น token หมดอายุหรือไม่
-        if (responseBody.contains('expired') || 
-            responseBody.contains('Unauthenticated') || 
-            responseBody.contains('Token has expired')) {
-          
-          print('📺 TV - AdService: Token has expired, attempting to refresh...');
-          
-          // ลองเรียก refresh token และดึงข้อมูลอีกครั้ง
-          return await _refreshAndRetry();
-        } else {
-          // กรณีอื่นๆ ที่ไม่ใช่ token หมดอายุ
-          _handleApiError();
-          return await _getFromCache(); // Fall back to cache
-        }
+        // จัดการ Token หมดอายุ
+        return await _refreshAndRetry();
       } else if (response.statusCode == 403) {
-        // กรณี Forbidden (403) - อุปกรณ์ถูกเพิกถอนสิทธิ์หรือถูก revoke
-        print('📺 TV - AdService: API error 403: ${response.body}');
-        
-        // ตรวจสอบว่าเป็น 403 error ที่เกิดขึ้นหลัง resync หรือไม่
-        if (_is403AfterResync()) {
-          print('📺 TV - AdService: 403 error occurred shortly after resync, waiting 5 seconds before retry...');
-          
-          // รอ 5 วินาทีแล้วลองใหม่
-          await Future.delayed(const Duration(seconds: 5));
-          
-          print('📺 TV - AdService: Retrying API call after 403 error...');
-          
-          // ลองเรียก API อีกครั้ง
-          try {
-            final retryResponse = await http.get(
-              Uri.parse(apiUrl),
-              headers: headers,
-            ).timeout(const Duration(seconds: 10));
-            
-            if (retryResponse.statusCode == 200) {
-              print('📺 TV - AdService: Retry successful after 403 error');
-              
-              // Reset error count on success
-              _consecutiveErrors = 0;
-              _lastFetchTime = DateTime.now();
-              
-              final data = jsonDecode(retryResponse.body);
-              
-              // แปลงข้อมูลเช่นเดียวกับเมธอดหลัก
-              List<dynamic> schedulesJson = [];
-              if (data.containsKey('schedules')) {
-                schedulesJson = data['schedules'] ?? [];
-              } else if (data.containsKey('message') && data['message'] is List) {
-                schedulesJson = data['message'] ?? [];
-              }
-              
-              final List<Map<String, dynamic>> schedules = schedulesJson
-                  .cast<Map<String, dynamic>>()
-                  .where((schedule) => _isScheduleValid(schedule))
-                  .toList();
-              
-              // Cache this data
-              await _saveToCache(schedules);
-              
-              return schedules;
-            } else {
-              print('📺 TV - AdService: Retry failed with status: ${retryResponse.statusCode}');
-            }
-          } catch (retryError) {
-            print('📺 TV - AdService: Retry attempt failed: $retryError');
-          }
-        }
-        
-        // ถ้าไม่ใช่กรณีหลัง resync หรือ retry ไม่สำเร็จ ให้ส่งสัญญาณ device_revoked
+        // จัดการอุปกรณ์ถูกถอนสิทธิ์
         throw Exception('device_revoked');
       } else {
-        // Handle other API errors
-        print('📺 TV - AdService: API error ${response.statusCode}: ${response.body}');
-        _handleApiError();
-        return await _getFromCache(); // Fall back to cache
+        // กรณีอื่นๆ ที่ไม่ใช่ 200 ให้ถือว่าล้มเหลว
+        throw Exception('API failed with status code: ${response.statusCode}');
       }
-    } on TimeoutException {
-      print('📺 TV - AdService: API request timed out');
-      _handleApiError();
-      return await _getFromCache();
-    } on SocketException {
-      print('📺 TV - AdService: No internet connection');
-      _handleApiError();
-      return await _getFromCache();
-    } catch (e) {
-      print('📺 TV - AdService: Error fetching schedules: $e');
-      
-      // ถ้าเป็น device_revoked exception ให้ throw ต่อไป
+    } 
+    // 3. ถ้าการดึงข้อมูลจากเน็ตเวิร์กล้มเหลว (เข้าสู่ catch block)
+    catch (e) {
       if (e.toString().contains('device_revoked')) {
-        print('📺 TV - AdService: Re-throwing device_revoked exception');
-        rethrow;
+        rethrow; // ส่งต่อไปให้ BLoC จัดการ
       }
-      
+
+      print('📺 TV - AdService: Failed to fetch from API ($e). Falling back to cache.');
       _handleApiError();
+
+      // ให้ไปดึงข้อมูลจากแคชมาใช้แทน
       return await _getFromCache();
     }
-  }
-  
-  // Validate a schedule has minimum required fields
+  }  // Validate a schedule has minimum required fields
   bool _isScheduleValid(Map<String, dynamic> schedule) {
     // Check if it has a URL
     final url = schedule['url']?.toString() ?? '';

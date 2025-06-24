@@ -190,7 +190,7 @@ class _AdPlayerScreenState extends State<AdPlayerScreen>
           _buildPreloadingOverlay(state),
 
         // Minimal debug info in corner (optional)
-        if (state is AdPlaying) _buildDebugInfo(state),
+        //if (state is AdPlaying) _buildDebugInfo(state),
       ],
     );
   }
@@ -348,45 +348,45 @@ class _AdPlayerScreenState extends State<AdPlayerScreen>
   }
 
   // Debug info overlay (optional, can be removed in production)
-  Widget _buildDebugInfo(AdPlaying state) {
-    final adBloc = context.read<AdBloc>();
-    final totalVideos = adBloc.totalVideoCount;
+  // Widget _buildDebugInfo(AdPlaying state) {
+  //   final adBloc = context.read<AdBloc>();
+  //   final totalVideos = adBloc.totalVideoCount;
 
-    return Positioned(
-      bottom: 20,
-      left: 20,
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.6),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'AD: ${state.currentAd.title ?? state.currentAd.id}',
-              style: const TextStyle(color: Colors.white, fontSize: 10),
-            ),
-            Text(
-              'Type: ${state.currentAd.type}',
-              style: const TextStyle(color: Colors.white, fontSize: 10),
-            ),
-            if (state.currentAd.type == 'video') ...[
-              Text(
-                'Ready: ${state.isVideoReady}',
-                style: TextStyle(
-                  color: state.isVideoReady ? Colors.green : Colors.orange,
-                  fontSize: 10,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
+  //   return Positioned(
+  //     bottom: 20,
+  //     left: 20,
+  //     child: Container(
+  //       padding: const EdgeInsets.all(8),
+  //       decoration: BoxDecoration(
+  //         color: Colors.black.withOpacity(0.6),
+  //         borderRadius: BorderRadius.circular(4),
+  //       ),
+  //       child: Column(
+  //         crossAxisAlignment: CrossAxisAlignment.start,
+  //         mainAxisSize: MainAxisSize.min,
+  //         children: [
+  //           Text(
+  //             'AD: ${state.currentAd.title ?? state.currentAd.id}',
+  //             style: const TextStyle(color: Colors.white, fontSize: 10),
+  //           ),
+  //           Text(
+  //             'Type: ${state.currentAd.type}',
+  //             style: const TextStyle(color: Colors.white, fontSize: 10),
+  //           ),
+  //           if (state.currentAd.type == 'video') ...[
+  //             Text(
+  //               'Ready: ${state.isVideoReady}',
+  //               style: TextStyle(
+  //                 color: state.isVideoReady ? Colors.green : Colors.orange,
+  //                 fontSize: 10,
+  //               ),
+  //             ),
+  //           ],
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
 
   void _transitionToNewContent(Widget newContent) {
     _nextContentWidget = newContent;

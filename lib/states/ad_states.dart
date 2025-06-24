@@ -25,19 +25,19 @@ class AdPreloading extends AdState {
 
 class AdPlaying extends AdState {
   final Advertisement currentAd;
-  final bool isVideoReady;
+  // final bool isVideoReady;
   // final VideoPlayerController? videoController;
   // final int? textureId;
   
   AdPlaying({
     required this.currentAd,
-    this.isVideoReady = false,
+    // this.isVideoReady = false,
     // this.videoController,
     // this.textureId,
   });
   
-  @override
-  String toString() => 'AdPlaying(ad: ${currentAd.id}, videoReady: $isVideoReady)';
+  // @override
+  // String toString() => 'AdPlaying(ad: ${currentAd.id}, videoReady: $isVideoReady)';
 }
 
 class AdNoContent extends AdState {
